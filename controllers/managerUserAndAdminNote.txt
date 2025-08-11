@@ -1,0 +1,1 @@
+Manager routes are protected by MANAGER role. If you also want ADMIN to access, include it in authorize(). 
