@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Vehicle = require('../models/Vehicle');
 const Log = require('../models/Log');
 const Announcement = require('../models/Announcement');
+const SecurityGuard = require('../models/SecurityGuard'); // Added import for SecurityGuard
 
 exports.register = asyncHandler(async (req, res) => {
   const user = await User.create(req.body);
@@ -13,7 +14,7 @@ exports.register = asyncHandler(async (req, res) => {
 
 exports.getProfile = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
-  res.json({ user });
+  res.json({ profile: user });
 });
 
 exports.getProfileByEmail = asyncHandler(async (req, res) => {
@@ -70,8 +71,20 @@ exports.getMyLogs = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user.id);
   const myVehicles = await Vehicle.find({ empNumber: user.empNumber });
   const numbers = myVehicles.map(v => v.vehicleNumber);
-  const logs = await Log.find({ vehicleNumber: { $in: numbers } }).sort({ createdAt: -1 });
-  res.json({ logs });
+  const logs = await Log.find({ vehicleNumber: { $in: numbers } }).sort({ createdAt: -1 }).lean();
+  
+  // Enhance logs with additional information
+  const enhancedLogs = await Promise.all(logs.map(async (log) => {
+    // Get security guard details
+    const guard = await SecurityGuard.findById(log.securityGuardId);
+    
+    return {
+      ...log,
+      securityGuardName: guard ? `${guard.firstName} ${guard.lastName}` : 'N/A'
+    };
+  }));
+  
+  res.json({ logs: enhancedLogs });
 });
 
 exports.getAnnouncements = asyncHandler(async (req, res) => {

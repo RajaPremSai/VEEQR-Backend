@@ -18,6 +18,9 @@ router.get('/vehicles/:vehicleId', ctrl.getUniVehicle);
 router.put('/vehicles/:vehicleId', ctrl.updateUniVehicle);
 router.delete('/vehicles/:vehicleId', ctrl.deleteUniVehicle);
 
+// Personal Vehicles (registered by users)
+router.get('/personal-vehicles', ctrl.getPersonalVehicles);
+
 // Gates
 router.post('/gates', ctrl.createGate);
 router.get('/gates', ctrl.getGates);

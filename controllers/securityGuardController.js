@@ -4,11 +4,12 @@ const Gate = require('../models/Gate');
 const Announcement = require('../models/Announcement');
 const Log = require('../models/Log');
 const Vehicle = require('../models/Vehicle');
+const UniversityVehicle = require('../models/UniversityVehicle'); // Added UniversityVehicle import
 const { verifySignature } = require('../utils/signature');
 
 exports.getProfile = asyncHandler(async (req, res) => {
   const guard = await SecurityGuard.findById(req.user.id).populate('assignedGates');
-  res.json({ guard });
+  res.json({ profile: guard });
 });
 
 exports.getAssignedGates = asyncHandler(async (req, res) => {
@@ -25,8 +26,25 @@ exports.getLogs = asyncHandler(async (req, res) => {
   const guard = await SecurityGuard.findById(req.user.id);
   const gateNumbers = (await Gate.find({ _id: { $in: guard.assignedGates } }))
     .map(g => g.gateNumber);
-  const logs = await Log.find({ gateNumber: { $in: gateNumbers } }).sort({ createdAt: -1 });
-  res.json({ logs });
+  const logs = await Log.find({ gateNumber: { $in: gateNumbers } }).sort({ createdAt: -1 }).lean();
+  
+  // Enhance logs with additional information
+  const enhancedLogs = await Promise.all(logs.map(async (log) => {
+    // Get vehicle details
+    const vehicle = await Vehicle.findOne({ vehicleNumber: log.vehicleNumber });
+    const uniVehicle = await UniversityVehicle.findOne({ vehicleNumber: log.vehicleNumber });
+    
+    // Get security guard details
+    const logGuard = await SecurityGuard.findById(log.securityGuardId);
+    
+    return {
+      ...log,
+      vehicleOwner: vehicle?.vehicleOwner || uniVehicle?.driverName || 'N/A',
+      securityGuardName: logGuard ? `${logGuard.firstName} ${logGuard.lastName}` : 'N/A'
+    };
+  }));
+  
+  res.json({ logs: enhancedLogs });
 });
 
 exports.getLogsByGuard = asyncHandler(async (req, res) => {

@@ -58,6 +58,12 @@ exports.deleteUniVehicle = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+// Personal Vehicles (registered by users)
+exports.getPersonalVehicles = asyncHandler(async (req, res) => {
+  const vehicles = await Vehicle.find().populate('ownerUserId', 'firstName lastName email contactNumber').sort({ createdAt: -1 });
+  res.json({ vehicles });
+});
+
 // Gates
 exports.createGate = asyncHandler(async (req, res) => {
   const gate = await Gate.create(req.body);
@@ -95,15 +101,31 @@ exports.deleteAnnouncement = asyncHandler(async (req, res) => {
 
 // Logs and export
 exports.getLogs = asyncHandler(async (req, res) => {
-  const { vehicleNumber, ownerName, date, gate, export: exportType } = req.query;
+  const { vehicleNumber, ownerName, date, gate, securityGuardId, entryTime, exitTime, vehicleType, export: exportType } = req.query;
   const filter = {};
   if (vehicleNumber) filter.vehicleNumber = vehicleNumber;
   if (gate) filter.gateNumber = gate;
+  if (securityGuardId) filter.securityGuardId = securityGuardId;
+  
   if (date) {
     const d = new Date(date);
     const next = new Date(d);
     next.setDate(d.getDate() + 1);
     filter.createdAt = { $gte: d, $lt: next };
+  }
+  
+  if (entryTime) {
+    const d = new Date(entryTime);
+    const next = new Date(d);
+    next.setDate(d.getDate() + 1);
+    filter.timeIn = { $gte: d, $lt: next };
+  }
+  
+  if (exitTime) {
+    const d = new Date(exitTime);
+    const next = new Date(d);
+    next.setDate(d.getDate() + 1);
+    filter.timeOut = { $gte: d, $lt: next };
   }
 
   // Owner name filter -> resolve vehicleNumbers first
@@ -134,10 +156,39 @@ exports.getLogs = asyncHandler(async (req, res) => {
       : { $in: numbers };
   }
 
+  // Vehicle type filter
+  if (vehicleType) {
+    const vehicles = await Vehicle.find({ vehicleType }).select('vehicleNumber');
+    const numbers = vehicles.map(v => v.vehicleNumber);
+    if (numbers.length === 0) {
+      return res.json({ logs: [] });
+    }
+    filter.vehicleNumber = filter.vehicleNumber
+      ? { $and: [filter.vehicleNumber, { $in: numbers }] }
+      : { $in: numbers };
+  }
+
   const logs = await Log.find(filter).sort({ createdAt: -1 }).lean();
 
+  // Enhance logs with additional information
+  const enhancedLogs = await Promise.all(logs.map(async (log) => {
+    // Get vehicle details
+    const vehicle = await Vehicle.findOne({ vehicleNumber: log.vehicleNumber });
+    const uniVehicle = await UniversityVehicle.findOne({ vehicleNumber: log.vehicleNumber });
+    
+    // Get security guard details
+    const guard = await SecurityGuard.findById(log.securityGuardId);
+    
+    return {
+      ...log,
+      vehicleType: vehicle?.vehicleType || uniVehicle?.vehicleType || 'N/A',
+      vehicleOwner: vehicle?.vehicleOwner || uniVehicle?.driverName || 'N/A',
+      securityGuardName: guard ? `${guard.firstName} ${guard.lastName}` : 'N/A'
+    };
+  }));
+
   if (exportType === 'csv') {
-    const csv = exportLogsCsv(logs);
+    const csv = exportLogsCsv(enhancedLogs);
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="logs.csv"');
     return res.send(csv);
@@ -145,10 +196,10 @@ exports.getLogs = asyncHandler(async (req, res) => {
   if (exportType === 'pdf') {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'attachment; filename="logs.pdf"');
-    return require('../utils/export').exportLogsPdf(logs, res);
+    return require('../utils/export').exportLogsPdf(enhancedLogs, res);
   }
 
-  res.json({ logs });
+  res.json({ logs: enhancedLogs });
 });
 
 // ============ Security Guards Management ============
